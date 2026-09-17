@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PREPARA HERMANAS MIRABAL</title>
+<title>Consulta de Calificaciones - 3er Año A</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3f6fa;color:#172033}
+.header{background:#123b67;color:white;padding:26px 20px;text-align:center}
+.header h1{margin:0 0 7px;font-size:28px}.header p{margin:0;opacity:.9}
+.container{max-width:1050px;margin:28px auto;padding:0 18px}
+.card{background:white;border-radius:16px;padding:22px;box-shadow:0 5px 22px rgba(20,45,75,.09);margin-bottom:20px}
+.searchrow{display:flex;gap:10px;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:240px;padding:14px 15px;border:1px solid #ccd7e2;border-radius:10px;font-size:16px}
+button{border:0;border-radius:10px;padding:14px 20px;background:#1769aa;color:white;font-weight:bold;cursor:pointer}
+button:hover{background:#12588e}
+button:disabled{background:#a9b8c8;cursor:not-allowed}
+.status{margin-top:12px;color:#506176;font-size:14px}
+.status.error{color:#c0392b;font-weight:bold}
+.student{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.info{background:#f6f9fc;border-radius:10px;padding:13px}.info small{display:block;color:#65758a;margin-bottom:4px}.info strong{font-size:16px}
+.tablewrap{overflow-x:auto} table{width:100%;border-collapse:collapse;min-width:620px}
+th,td{padding:13px 12px;border-bottom:1px solid #e3e9ef;text-align:center}
+th{background:#123b67;color:white}td:first-child{text-align:left;font-weight:bold}
+tr:hover td{background:#f8fbff}
+.cf{font-weight:bold;background:#eef6ff}
+.message{text-align:center;padding:24px;color:#65758a}
+.note{font-size:13px;color:#68788a;line-height:1.5}
+.low{color:#c0392b;font-weight:bold}
+.banner{margin-top:18px;text-align:center;padding:18px;border-radius:14px;font-size:26px;font-weight:800;letter-spacing:1px}
+.banner.aprobado{color:#1e7e34;background:#eafaf1;box-shadow:0 0 22px 4px rgba(30,126,52,.55)}
+.banner.reprobado{color:#c0392b;background:#fdecea;box-shadow:0 0 22px 4px rgba(192,57,43,.6)}
+@media(max-width:700px){.student{grid-template-columns:1fr 1fr}.header h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>PREPARA HERMANAS MIRABAL</h1>
+  <h1>Consulta de Calificaciones</h1>
+  <p>3er Año A · Búsqueda por número de ID</p>
+</div>
+
+<div class="container">
+  <div class="card">
+    <div id="status" class="status">Cargando la base de datos de calificaciones...</div>
+  </div>
+
+  <div class="card">
+    <strong>BUSCAR ESTUDIANTES POR EL ID</strong>
+    <div class="searchrow" style="margin-top:12px">
+      <input id="idInput" type="text" placeholder="Ej.: 3A-A-02" autocomplete="off" disabled>
+      <button id="btnBuscar" onclick="buscar()" disabled>BUSCAR</button>
+    </div>
+    <div class="note" style="margin-top:10px">Puedes escribir el ID completo o usar mayúsculas/minúsculas indistintamente.</div>
+  </div>
+
+  <div id="resultado" class="card">
+    <div class="message">Espera a que cargue la base de datos para consultar.</div>
+  </div>
+</div>
+
+<script>
+/* Nombre EXACTO del archivo de Excel que debe estar dentro de esta misma carpeta */
+const NOMBRE_ARCHIVO_EXCEL = "CALCULO_NOTAS_POR_PERIODOS_3ER_AN_O_A.xlsx";
+
+let workbook = null;
+const materias = {
+  "ESPANOL":"Español",
+  "INGLES":"Inglés",
+  "MATEMATICA":"Matemática",
+  "SOCIALES":"Sociales",
+  "NATURALES":"Naturales",
+  "EDU.ARTISTICA":"Educación Artística",
+  "EDU.FISICA":"Educación Física",
+  "RELIGION":"Religión"
+};
+
+async function cargarExcel(){
+  const status=document.getElementById('status');
+  try{
+    const res=await fetch(NOMBRE_ARCHIVO_EXCEL, {cache:"no-store"});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const buf=await res.arrayBuffer();
+    workbook=XLSX.read(buf,{type:'array'});
+    status.textContent = `Base de datos cargada · ${workbook.SheetNames.length} asignaturas.`;
+    document.getElementById('idInput').disabled=false;
+    document.getElementById('btnBuscar').disabled=false;
+    document.getElementById('resultado').innerHTML='<div class="message">Escribe tu ID para consultar tus calificaciones.</div>';
+  }catch(err){
+    workbook=null;
+    status.classList.add('error');
+    status.innerHTML = `No se pudo cargar "${NOMBRE_ARCHIVO_EXCEL}".<br>
+      Verifica que el archivo esté en esta misma carpeta y que la página se esté abriendo desde un servidor web (no con doble clic).`;
+  }
+}
+cargarExcel();
+
+document.getElementById('idInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter')buscar();
+});
+
+function num(v){
+  if(v===null || v===undefined || v==='') return 0;
+  if(typeof v==='number') return v;
+  const n=parseFloat(String(v).replace(',','.'));
+  return Number.isFinite(n)?n:0;
+}
+
+function estaVacio(v){
+  return v===null || v===undefined || String(v).trim()==='';
+}
+
+/* En el archivo original, cada periodo se calcula con cuatro componentes:
+   P1: E, M, U, AC
+   P2: G, O, W, AE
+   P3: I, Q, Y, AG
+   P4: K, S, AA, AI
+   El C.F. es el promedio de P1-P4.
+   Si falta alguna casilla del periodo, ese periodo no se calcula (queda vacío).
+   El C.F. solo se calcula si los cuatro periodos tienen valor.
+*/
+function promedioPeriodo(cols,row){
+  for(const c of cols){ if(estaVacio(row[c])) return null; }
+  return cols.reduce((s,c)=>s+num(row[c]),0)/cols.length;
+}
+
+function calcularNotas(row){
+  const p1=promedioPeriodo([4,12,20,28],row);
+  const p2=promedioPeriodo([6,14,22,30],row);
+  const p3=promedioPeriodo([8,16,24,32],row);
+  const p4=promedioPeriodo([10,18,26,34],row);
+  const cf=(p1===null||p2===null||p3===null||p4===null) ? null : (p1+p2+p3+p4)/4;
+  return [p1,p2,p3,p4,cf];
+}
+
+function buscar(){
+  const out=document.getElementById('resultado');
+  if(!workbook){
+    out.innerHTML='<div class="message">La base de datos aún no se ha cargado.</div>';
+    return;
+  }
+  const id=document.getElementById('idInput').value.trim().toUpperCase();
+  if(!id){
+    out.innerHTML='<div class="message">Escribe el número de ID del estudiante.</div>';
+    return;
+  }
+
+  let estudiante=null, notas={};
+  for(const sheet of workbook.SheetNames){
+    const ws=workbook.Sheets[sheet];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+    for(let i=2;i<rows.length;i++){
+      const r=rows[i]||[];
+      if(String(r[1]??'').trim().toUpperCase()===id){
+        if(!estudiante) estudiante={orden:r[0],id:r[1],nombres:r[2],apellidos:r[3]};
+        if(materias[sheet]) notas[sheet]=calcularNotas(r);
+        break;
+      }
+    }
+  }
+
+  if(!estudiante){
+    out.innerHTML='<div class="message"><strong>No se encontró ese ID.</strong><br>Verifica el número e intenta nuevamente.</div>';
+    return;
+  }
+
+  let html=`<div class="student">
+    <div class="info"><small>Orden</small><strong>${esc(estudiante.orden)}</strong></div>
+    <div class="info"><small>ID</small><strong>${esc(estudiante.id)}</strong></div>
+    <div class="info"><small>Nombres</small><strong>${esc(estudiante.nombres)}</strong></div>
+    <div class="info"><small>Apellidos</small><strong>${esc(estudiante.apellidos)}</strong></div>
+  </div>
+  <div class="tablewrap"><table><thead><tr><th>Asignatura</th><th>P1</th><th>P2</th><th>P3</th><th>P4</th><th>C.F.</th></tr></thead><tbody>`;
+
+  let huboReprobadoCF=false, datosCompletos=true;
+  for(const [key,nombre] of Object.entries(materias)){
+    const n=notas[key] || [null,null,null,null,null];
+    html+=`<tr><td>${nombre}</td>
+      <td class="${cls(n[0])}">${fmt(n[0])}</td><td class="${cls(n[1])}">${fmt(n[1])}</td><td class="${cls(n[2])}">${fmt(n[2])}</td>
+      <td class="${cls(n[3])}">${fmt(n[3])}</td><td class="cf ${cls(n[4])}">${fmt(n[4])}</td></tr>`;
+    if(n[4]===null) datosCompletos=false;
+    else if(n[4]<70) huboReprobadoCF=true;
+  }
+  html+='</tbody></table></div>';
+  html+='<p class="note" style="margin-bottom:0">Solo se muestran P1, P2, P3, P4 y C.F. Las columnas de recuperación y demás componentes del Excel no se muestran.</p>';
+  if(datosCompletos){
+    html+= huboReprobadoCF
+      ? '<div class="banner reprobado">REPROBADO</div>'
+      : '<div class="banner aprobado">APROBADO</div>';
+  }
+  out.innerHTML=html;
+}
+
+function cls(n){
+  return (n!==null && n<70) ? 'low' : '';
+}
+
+function fmt(n){
+  if(n===null || n===undefined) return '';
+  return Number.isInteger(n)?String(n):n.toFixed(2).replace(/0+$/,'').replace(/\.$/,'');
+}
+function esc(v){
+  return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+}
+</script>
+</body>
+</html>
